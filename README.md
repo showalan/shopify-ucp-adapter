@@ -244,7 +244,11 @@ adapter.invalidate_cache("1234567890")  # clear specific product
 
 ### 3. Variant Flattening
 
-Each Shopify variant becomes a UCP `Offer`:
+Each Shopify variant becomes a UCP `Offer`, and each flattened UCP product gets a composite ID:
+
+```
+shp_{product_id}_{variant_id}
+```
 
 **Shopify format**:
 ```json
@@ -324,6 +328,23 @@ In Shopify Admin:
 2. Create webhook
 3. Events: `Product creation`, `Product update`, `Product deletion`
 4. URL: `http://your-domain.com:8000/webhooks/shopify`
+
+### 7. Session Endpoint (Shipping Callback)
+
+Create a session with an optional shipping address to get dynamic tax estimates:
+
+```bash
+curl -X POST http://localhost:8000/ucp/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"product_id":"123","variant_id":"456","quantity":2,"shipping_address":{"country_code":"US"}}'
+```
+
+If the country matches `tax.region_rates`, that rate is applied; otherwise the default rate is used.
+
+## 📈 Observability
+
+OpenTelemetry metrics record request duration for discovery endpoints. Metrics are exported via
+the console exporter by default, and a log line is written to commerce.log for each session.
 
 ## 🔌 FastAPI Router (Async)
 

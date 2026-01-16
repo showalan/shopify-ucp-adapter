@@ -1,7 +1,11 @@
 import pytest
+import httpx
 
 from shopify_ucp_adapter.adapter import ShopifyUCPAdapter
 from shopify_ucp_adapter.config import AdapterConfig
+from shopify_ucp_adapter.models.shopify_models import ShopifyProduct
+from shopify_ucp_adapter.router import get_ucp_router
+from fastapi import FastAPI
 
 
 def make_config():
@@ -75,3 +79,37 @@ def test_currency_provider_override():
     adapter = ShopifyUCPAdapter(make_config(), currency_provider=currency_provider)
     results = adapter.transform_product(sample_product())
     assert results[0].offers[0].price_specification.price_currency == "USD"
+
+
+def test_exchange_rate_fallback_on_error():
+    def currency_provider(_variant):
+        return "USD"
+
+    def exchange_rate_provider(_from, _to):
+        raise RuntimeError("FX error")
+
+    adapter = ShopifyUCPAdapter(
+        make_config(),
+        currency_provider=currency_provider,
+        exchange_rate_provider=exchange_rate_provider,
+    )
+    results = adapter.transform_product(sample_product())
+    assert results[0].offers[0].price_specification.price_currency == "EUR"
+
+
+@pytest.mark.asyncio
+async def test_router_starts_and_responds():
+    config = make_config()
+    adapter = ShopifyUCPAdapter(config)
+    app = FastAPI()
+    app.include_router(get_ucp_router(adapter))
+
+    async def fake_fetch_product(_product_id: str):
+        return ShopifyProduct(**sample_product())
+
+    adapter.fetch_product = fake_fetch_product  # type: ignore[assignment]
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/ucp/products/123")
+        assert response.status_code == 200

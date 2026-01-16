@@ -28,16 +28,23 @@ class ShopifyUCPAdapter:
     - Handling multi-variant products
     """
     
-    def __init__(self, config: AdapterConfig, currency_provider: Optional[Callable[[ShopifyVariant], str]] = None):
+    def __init__(
+        self,
+        config: AdapterConfig,
+        currency_provider: Optional[Callable[[ShopifyVariant], str]] = None,
+        exchange_rate_provider: Optional[Callable[[str, str], Decimal]] = None,
+    ):
         """
         Initialize the adapter.
         
         Args:
             config: Adapter configuration
             currency_provider: Optional function to override currency per variant
+            exchange_rate_provider: Optional function to get FX rates (from_currency, to_currency)
         """
         self.config = config
         self.currency_provider = currency_provider
+        self.exchange_rate_provider = exchange_rate_provider
         
         # Setup rate limiter
         self.rate_limiter = TokenBucketRateLimiter(
@@ -200,6 +207,36 @@ class ShopifyUCPAdapter:
         tax_amount = price_decimal * Decimal(str(tax_rate))
         total = price_decimal + tax_amount
         return str(total.quantize(Decimal("0.01")))
+
+    def _resolve_currency_and_price(self, variant: ShopifyVariant) -> tuple[str, str]:
+        """
+        Resolve currency and converted price for a variant.
+
+        If a currency_provider returns a different currency, this will attempt to convert
+        using exchange_rate_provider. If conversion fails, it falls back to the original
+        currency and price.
+        """
+        base_currency = variant.price.currency_code or self.config.currency.default_currency
+        target_currency = base_currency
+
+        if self.currency_provider:
+            try:
+                target_currency = self.currency_provider(variant) or base_currency
+            except Exception:
+                target_currency = base_currency
+
+        if target_currency == base_currency:
+            return base_currency, variant.price.amount
+
+        if not self.exchange_rate_provider:
+            return target_currency, variant.price.amount
+
+        try:
+            rate = self.exchange_rate_provider(base_currency, target_currency)
+            converted = (Decimal(variant.price.amount) * rate).quantize(Decimal("0.01"))
+            return target_currency, str(converted)
+        except Exception:
+            return base_currency, variant.price.amount
     
     def _convert_variant_to_offer(
         self, 
@@ -216,15 +253,11 @@ class ShopifyUCPAdapter:
         Returns:
             UCP Offer object
         """
-        # Determine currency
-        currency = None
-        if self.currency_provider:
-            currency = self.currency_provider(variant)
-        if not currency:
-            currency = variant.price.currency_code or self.config.currency.default_currency
+        # Determine currency and base price (possibly converted)
+        currency, base_amount = self._resolve_currency_and_price(variant)
 
         # Calculate final price
-        final_price = self._calculate_price_with_tax(variant.price.amount)
+        final_price = self._calculate_price_with_tax(base_amount)
         
         # Determine availability
         availability = "InStock" if variant.available else "OutOfStock"
@@ -342,10 +375,11 @@ class ShopifyUCPAdapter:
         results: List[UCPProduct] = []
         for variant in product.variants:
             offer = self._convert_variant_to_offer(variant, product.online_store_url)
+            ucp_id = f"shp_{product.id}_{variant.id}"
             variant_suffix = f" - {offer.name}" if offer.name else ""
             results.append(
                 UCPProduct(
-                    product_id=product.id,
+                    product_id=ucp_id,
                     name=f"{product.title}{variant_suffix}",
                     description=product.description,
                     image=ucp_images,
