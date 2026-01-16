@@ -4,6 +4,7 @@ import asyncio
 import json
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -30,6 +31,17 @@ def load_config(config_path: str) -> AdapterConfig:
         config_data = json.load(f)
     
     return AdapterConfig(**config_data)
+
+
+def extract_handle_from_url(product_url: str) -> Optional[str]:
+    """Extract Shopify product handle from a product URL."""
+    parsed = urlparse(product_url)
+    if not parsed.path:
+        return None
+    parts = [p for p in parsed.path.split('/') if p]
+    if len(parts) >= 2 and parts[-2] == "products":
+        return parts[-1]
+    return None
 
 
 @app.command()
@@ -62,7 +74,12 @@ def init(
             "max_requests_per_second": 2.0,
             "burst_size": 10,
             "enable_caching": True,
-            "cache_ttl_seconds": 300
+            "cache_ttl_seconds": 300,
+            "allow_stale_on_error": True,
+            "stale_ttl_seconds": 86400
+        },
+        "inventory": {
+            "buffer_stock": 0
         }
     }
     
@@ -172,6 +189,50 @@ def validate(
     except Exception as e:
         console.print(f"[red]✗ Configuration error:[/red] {str(e)}")
         raise typer.Exit(1)
+
+
+@app.command("from-url")
+def from_url(
+    product_url: str = typer.Argument(..., help="Shopify product URL"),
+    config: str = typer.Option("config.json", help="Configuration file path"),
+    flatten_variants: bool = typer.Option(False, help="Return one UCP product per variant"),
+):
+    """Fetch a product by URL and print the converted UCP JSON."""
+
+    async def _from_url():
+        cfg = load_config(config)
+        handle = extract_handle_from_url(product_url)
+        if not handle:
+            console.print("[red]Error: Could not extract product handle from URL.[/red]")
+            raise typer.Exit(1)
+
+        async with ShopifyUCPAdapter(cfg) as adapter:
+            product = await adapter.fetch_product_by_handle(handle)
+            if not product:
+                console.print("[red]Error: Product not found for the given URL.[/red]")
+                raise typer.Exit(1)
+
+            if flatten_variants:
+                products = adapter.transform_product(product)
+                console.print(JSON(
+                    json.dumps(
+                        [p.model_dump(mode='json', by_alias=True) for p in products],
+                        default=str,
+                        indent=2
+                    )
+                ))
+                return
+
+            ucp_product = adapter.convert_to_ucp(product)
+            console.print(JSON(
+                json.dumps(
+                    ucp_product.model_dump(mode='json', by_alias=True),
+                    default=str,
+                    indent=2
+                )
+            ))
+
+    asyncio.run(_from_url())
 
 
 if __name__ == "__main__":

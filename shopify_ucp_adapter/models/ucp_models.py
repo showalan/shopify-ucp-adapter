@@ -2,7 +2,7 @@
 
 from typing import Optional, List, Literal
 from datetime import datetime
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, ConfigDict
 
 
 class UCPOrganization(BaseModel):
@@ -11,8 +11,7 @@ class UCPOrganization(BaseModel):
     name: str
     url: Optional[HttpUrl] = None
     
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class UCPPrice(BaseModel):
@@ -22,8 +21,7 @@ class UCPPrice(BaseModel):
     price_currency: str = Field(alias="priceCurrency")
     value_added_tax_included: Optional[bool] = Field(None, alias="valueAddedTaxIncluded")
     
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class UCPImage(BaseModel):
@@ -34,8 +32,7 @@ class UCPImage(BaseModel):
     width: Optional[int] = None
     height: Optional[int] = None
     
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class UCPOffer(BaseModel):
@@ -63,8 +60,7 @@ class UCPOffer(BaseModel):
     # Variant-specific fields
     name: Optional[str] = None  # Variant title (e.g., "Red / Large")
     
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class UCPProduct(BaseModel):
@@ -84,9 +80,9 @@ class UCPProduct(BaseModel):
     date_published: Optional[datetime] = Field(None, alias="datePublished")
     date_modified: Optional[datetime] = Field(None, alias="dateModified")
     
-    class Config:
-        populate_by_name = True
-        json_schema_extra = {
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
             "example": {
                 "@context": "https://schema.org",
                 "@type": "Product",
@@ -106,3 +102,4 @@ class UCPProduct(BaseModel):
                 ]
             }
         }
+    )

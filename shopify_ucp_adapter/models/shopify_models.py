@@ -2,7 +2,7 @@
 
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class ShopifyPrice(BaseModel):
@@ -10,8 +10,7 @@ class ShopifyPrice(BaseModel):
     amount: str
     currency_code: str = Field(alias="currencyCode")
     
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ShopifyImage(BaseModel):
@@ -22,8 +21,7 @@ class ShopifyImage(BaseModel):
     width: Optional[int] = None
     height: Optional[int] = None
     
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ShopifyInventory(BaseModel):
@@ -47,8 +45,7 @@ class ShopifyVariant(BaseModel):
     selected_options: List[Dict[str, str]] = Field(default_factory=list, alias="selectedOptions")
     barcode: Optional[str] = None
     
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ShopifyProduct(BaseModel):
@@ -71,5 +68,4 @@ class ShopifyProduct(BaseModel):
     seo_description: Optional[str] = Field(None, alias="seoDescription")
     online_store_url: Optional[str] = Field(None, alias="onlineStoreUrl")
     
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)

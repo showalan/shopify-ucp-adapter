@@ -1,7 +1,7 @@
 """Configuration management for the Shopify UCP Adapter."""
 
 from typing import Optional, Dict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class TaxConfig(BaseModel):
@@ -29,6 +29,13 @@ class RateLimitConfig(BaseModel):
     burst_size: int = Field(10, gt=0, description="Maximum burst size for rate limiter")
     enable_caching: bool = Field(True, description="Enable response caching")
     cache_ttl_seconds: int = Field(300, gt=0, description="Cache TTL in seconds")
+    allow_stale_on_error: bool = Field(True, description="Return stale cache on API errors")
+    stale_ttl_seconds: int = Field(86400, gt=0, description="Max age for stale cache fallback")
+
+
+class InventoryConfig(BaseModel):
+    """Inventory configuration."""
+    buffer_stock: int = Field(0, ge=0, description="Buffer stock to prevent overselling")
 
 
 class ShopifyConfig(BaseModel):
@@ -45,13 +52,14 @@ class AdapterConfig(BaseModel):
     tax: TaxConfig = Field(default_factory=TaxConfig)
     currency: CurrencyConfig = Field(default_factory=CurrencyConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
+    inventory: InventoryConfig = Field(default_factory=InventoryConfig)
     
     # Organization info for Schema.org
     organization_name: str = Field(..., description="Your organization name")
     organization_url: Optional[str] = Field(None, description="Your organization website URL")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "shopify": {
                     "shop_domain": "mystore.myshopify.com",
@@ -66,6 +74,18 @@ class AdapterConfig(BaseModel):
                 },
                 "currency": {
                     "default_currency": "USD"
+                },
+                "rate_limit": {
+                    "max_requests_per_second": 2.0,
+                    "burst_size": 10,
+                    "enable_caching": True,
+                    "cache_ttl_seconds": 300,
+                    "allow_stale_on_error": True,
+                    "stale_ttl_seconds": 86400
+                },
+                "inventory": {
+                    "buffer_stock": 0
                 }
             }
         }
+    )

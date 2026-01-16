@@ -3,7 +3,6 @@
 import asyncio
 import time
 from typing import Optional
-from collections import deque
 
 
 class TokenBucketRateLimiter:
@@ -82,18 +81,21 @@ class TokenBucketRateLimiter:
 
 
 class SimpleCache:
-    """Simple TTL-based cache for API responses."""
+    """Simple TTL-based cache for API responses with optional ETag support."""
     
-    def __init__(self, ttl: int):
+    def __init__(self, ttl: int, stale_ttl: int = 86400):
         """
         Initialize cache.
         
         Args:
-            ttl: Time-to-live in seconds
+            ttl: Time-to-live in seconds for fresh cache
+            stale_ttl: Max age for stale cache fallback
         """
         self.ttl = ttl
+        self.stale_ttl = stale_ttl
         self._cache: dict = {}
         self._timestamps: dict = {}
+        self._etags: dict = {}
     
     def get(self, key: str) -> Optional[any]:
         """Get cached value if not expired."""
@@ -101,23 +103,39 @@ class SimpleCache:
             return None
         
         if time.time() - self._timestamps[key] > self.ttl:
-            del self._cache[key]
-            del self._timestamps[key]
             return None
         
         return self._cache[key]
     
-    def set(self, key: str, value: any) -> None:
-        """Set cached value with current timestamp."""
+    def get_stale(self, key: str) -> Optional[any]:
+        """Get cached value even if stale (within stale TTL)."""
+        if key not in self._cache:
+            return None
+        
+        if time.time() - self._timestamps[key] > self.stale_ttl:
+            return None
+        
+        return self._cache[key]
+    
+    def get_etag(self, key: str) -> Optional[str]:
+        """Get cached ETag for a key."""
+        return self._etags.get(key)
+    
+    def set(self, key: str, value: any, etag: Optional[str] = None) -> None:
+        """Set cached value with current timestamp and optional ETag."""
         self._cache[key] = value
         self._timestamps[key] = time.time()
+        if etag:
+            self._etags[key] = etag
     
     def clear(self) -> None:
         """Clear all cached values."""
         self._cache.clear()
         self._timestamps.clear()
+        self._etags.clear()
     
     def invalidate(self, key: str) -> None:
         """Invalidate specific cache key."""
         self._cache.pop(key, None)
         self._timestamps.pop(key, None)
+        self._etags.pop(key, None)

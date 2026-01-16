@@ -73,7 +73,12 @@ Config example:
     "max_requests_per_second": 2.0,
     "burst_size": 10,
     "enable_caching": true,
-    "cache_ttl_seconds": 300
+    "cache_ttl_seconds": 300,
+    "allow_stale_on_error": true,
+    "stale_ttl_seconds": 86400
+  },
+  "inventory": {
+    "buffer_stock": 0
   }
 }
 ```
@@ -88,6 +93,9 @@ shopify-ucp fetch 1234567890
 
 # Fetch multiple products
 shopify-ucp fetch --limit 20 --output products.json
+
+# Fetch by Shopify product URL
+shopify-ucp from-url "https://your-store.myshopify.com/products/red-shirt" --flatten-variants
 
 # Validate configuration
 shopify-ucp validate
@@ -129,6 +137,18 @@ async def main():
         print(f"Fetched {len(products)} products")
 
 asyncio.run(main())
+```
+
+#### Currency Provider
+
+You can override the currency per variant (e.g., based on request locale):
+
+```python
+def currency_provider(variant):
+  return "USD"
+
+async with ShopifyUCPAdapter(config, currency_provider=currency_provider) as adapter:
+  product = await adapter.get_product_as_ucp("1234567890")
 ```
 
 #### Webhook Listener
@@ -181,6 +201,7 @@ shopify-ucp-adapter/
 │   ├── rate_limiter.py      # Rate limiter
 │   ├── webhook.py           # Webhook handler
 │   ├── cli.py               # CLI
+│   ├── router.py            # FastAPI router
 │   └── models/
 │       ├── shopify_models.py  # Shopify models
 │       └── ucp_models.py      # UCP/Schema.org models
@@ -214,6 +235,8 @@ TTL cache to reduce repeated calls:
 ```python
 config.rate_limit.enable_caching = True
 config.rate_limit.cache_ttl_seconds = 300
+config.rate_limit.allow_stale_on_error = True
+config.rate_limit.stale_ttl_seconds = 86400
 
 adapter.invalidate_cache()  # clear all
 adapter.invalidate_cache("1234567890")  # clear specific product
@@ -278,7 +301,15 @@ config.tax.region_rates = {
 }
 ```
 
-### 5. Webhook Updates
+### 5. Inventory Buffer
+
+Prevent overselling by declaring OutOfStock when inventory is low:
+
+```python
+config.inventory.buffer_stock = 2
+```
+
+### 6. Webhook Updates
 
 Receive real-time updates and invalidate cache:
 
@@ -293,6 +324,40 @@ In Shopify Admin:
 2. Create webhook
 3. Events: `Product creation`, `Product update`, `Product deletion`
 4. URL: `http://your-domain.com:8000/webhooks/shopify`
+
+## 🔌 FastAPI Router (Async)
+
+Use `get_ucp_router` to expose async endpoints:
+
+```python
+from fastapi import FastAPI
+from shopify_ucp_adapter import ShopifyUCPAdapter, AdapterConfig, get_ucp_router
+
+app = FastAPI()
+adapter = ShopifyUCPAdapter(config)
+app.include_router(get_ucp_router(adapter))
+```
+
+Endpoints:
+- `GET /ucp/products/{product_id}`
+- `GET /ucp/products/by-handle/{handle}`
+
+Add `?flatten_variants=true` to return one UCP product per variant.
+
+## 🤖 Using with mcp-bridge-server
+
+Example: expose the router behind an MCP bridge:
+
+```python
+from fastapi import FastAPI
+from shopify_ucp_adapter import ShopifyUCPAdapter, AdapterConfig, get_ucp_router
+
+app = FastAPI()
+adapter = ShopifyUCPAdapter(config)
+app.include_router(get_ucp_router(adapter))
+
+# Then register this FastAPI app in your mcp-bridge-server configuration.
+```
 
 ## 🧪 Testing
 
