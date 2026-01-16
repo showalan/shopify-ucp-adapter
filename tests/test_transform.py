@@ -7,6 +7,7 @@ from shopify_ucp_adapter.models.shopify_models import ShopifyProduct
 from shopify_ucp_adapter.router import get_ucp_router
 from fastapi import FastAPI
 from shopify_ucp_adapter.mock_client import MockShopifyClient
+from shopify_ucp_adapter.storage import SQLiteStorage
 
 
 def make_config():
@@ -62,6 +63,7 @@ def test_transform_product_flattens_variants():
     assert len(results) == 2
     assert results[0].offers[0].name == "Red / Small"
     assert results[1].offers[0].name == "Blue / Large"
+    assert results[0].keywords and "Apparel" in results[0].keywords
 
 
 def test_buffer_stock_affects_availability():
@@ -127,7 +129,8 @@ async def test_session_idempotency():
     config = make_config()
     adapter = ShopifyUCPAdapter(config)
     app = FastAPI()
-    app.include_router(get_ucp_router(adapter))
+    storage = SQLiteStorage(":memory:")
+    app.include_router(get_ucp_router(adapter, storage=storage))
 
     async def fake_fetch_product(_product_id: str):
         return ShopifyProduct(**sample_product())

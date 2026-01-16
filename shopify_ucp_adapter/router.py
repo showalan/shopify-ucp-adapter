@@ -10,10 +10,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from .adapter import ShopifyUCPAdapter
+from .storage import BaseStorage, InMemoryStorage
+from .circuit_breaker import CircuitBreakerOpen
 from .telemetry import get_request_duration_histogram
 
 
-def get_ucp_router(adapter: ShopifyUCPAdapter) -> APIRouter:
+def get_ucp_router(adapter: ShopifyUCPAdapter, storage: Optional[BaseStorage] = None) -> APIRouter:
     """
     Create a FastAPI router for UCP endpoints.
 
@@ -40,7 +42,7 @@ def get_ucp_router(adapter: ShopifyUCPAdapter) -> APIRouter:
         cart_token: Optional[str] = None
         idempotency_key: Optional[str] = None
 
-    session_store: dict[str, dict] = {}
+    session_store: BaseStorage = storage or InMemoryStorage()
 
     @router.get("/products/{product_id}")
     async def get_product(product_id: str, flatten_variants: Optional[bool] = False):
@@ -73,7 +75,10 @@ def get_ucp_router(adapter: ShopifyUCPAdapter) -> APIRouter:
             existing = session_store.get(idempotency_key)
             if existing and now - existing["ts"] <= 300:
                 return existing["response"]
-        product = await adapter.fetch_product(request.product_id)
+        try:
+            product = await adapter.fetch_product(request.product_id)
+        except CircuitBreakerOpen:
+            return {"status": "UCP_STATUS_MAINTENANCE"}
         if not product.variants:
             raise HTTPException(status_code=400, detail="Product has no variants")
 
@@ -125,7 +130,7 @@ def get_ucp_router(adapter: ShopifyUCPAdapter) -> APIRouter:
         }
 
         if idempotency_key:
-            session_store[idempotency_key] = {"ts": now, "response": response}
+            session_store.set(idempotency_key, {"ts": now, "response": response})
 
         return response
 

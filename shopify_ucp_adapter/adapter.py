@@ -16,6 +16,7 @@ from .models.ucp_models import (
 )
 from .config import AdapterConfig
 from .rate_limiter import TokenBucketRateLimiter, SimpleCache
+from .circuit_breaker import CircuitBreaker, CircuitBreakerOpen
 
 
 class ShopifyUCPAdapter:
@@ -49,6 +50,7 @@ class ShopifyUCPAdapter:
         self.config = config
         self.currency_provider = currency_provider
         self.exchange_rate_provider = exchange_rate_provider
+        self.circuit_breaker = CircuitBreaker()
         
         # Setup rate limiter
         self.rate_limiter = TokenBucketRateLimiter(
@@ -117,6 +119,9 @@ class ShopifyUCPAdapter:
             if cached is not None:
                 return cached
         
+        # Circuit breaker guard
+        self.circuit_breaker.guard()
+
         # Acquire rate limit token
         await self.rate_limiter.acquire()
         
@@ -136,7 +141,15 @@ class ShopifyUCPAdapter:
                 if cached is not None:
                     return cached
             response.raise_for_status()
+            self.circuit_breaker.record_success()
         except (httpx.HTTPStatusError, httpx.RequestError):
+            self.circuit_breaker.record_failure()
+            if self.cache and method == "GET" and self.config.rate_limit.allow_stale_on_error:
+                stale = self.cache.get_stale(cache_key)
+                if stale is not None:
+                    return stale
+            raise
+        except CircuitBreakerOpen:
             if self.cache and method == "GET" and self.config.rate_limit.allow_stale_on_error:
                 stale = self.cache.get_stale(cache_key)
                 if stale is not None:
@@ -358,6 +371,8 @@ class ShopifyUCPAdapter:
             or shopify_product.description
         )
 
+        keywords = list(dict.fromkeys((shopify_product.tags or []) + ([shopify_product.product_type] if shopify_product.product_type else [])))
+
         return UCPProduct(
             product_id=shopify_product.id,
             name=shopify_product.title,
@@ -365,6 +380,7 @@ class ShopifyUCPAdapter:
             image=ucp_images,
             brand=brand,
             category=shopify_product.product_type,
+            keywords=keywords or None,
             offers=offers,
             url=shopify_product.online_store_url,
             date_published=shopify_product.published_at,
@@ -403,6 +419,8 @@ class ShopifyUCPAdapter:
             or product.description
         )
 
+        keywords = list(dict.fromkeys((product.tags or []) + ([product.product_type] if product.product_type else [])))
+
         results: List[UCPProduct] = []
         for variant in product.variants:
             offer = self._convert_variant_to_offer(variant, product.online_store_url)
@@ -416,6 +434,7 @@ class ShopifyUCPAdapter:
                     image=ucp_images,
                     brand=brand,
                     category=product.product_type,
+                    keywords=keywords or None,
                     offers=[offer],
                     url=product.online_store_url,
                     date_published=product.published_at,
@@ -479,3 +498,39 @@ class ShopifyUCPAdapter:
             self.cache.invalidate(f"GET:{endpoint}")
         else:
             self.cache.clear()
+
+    def to_mcp_tool_definition(self, base_url: str) -> dict:
+        """
+        Return MCP tool definitions for this adapter.
+
+        Args:
+            base_url: Base URL of the running UCP server
+        """
+        return {
+            "name": "shopify-ucp",
+            "version": "1.0",
+            "servers": [
+                {
+                    "name": "shopify-ucp",
+                    "type": "http",
+                    "base_url": base_url,
+                    "routes": [
+                        {
+                            "method": "GET",
+                            "path": "/ucp/products/{product_id}",
+                            "description": "Fetch a product by Shopify product ID. Use this during browsing and discovery.",
+                        },
+                        {
+                            "method": "GET",
+                            "path": "/ucp/products/by-handle/{handle}",
+                            "description": "Fetch a product by Shopify handle. Use this for direct URL lookups.",
+                        },
+                        {
+                            "method": "POST",
+                            "path": "/ucp/sessions",
+                            "description": "Create a shopping session. Use this ONLY after the user has confirmed the specific variant (size/color) and is ready to proceed to payment. Do not call this during the browsing phase.",
+                        },
+                    ],
+                }
+            ],
+        }

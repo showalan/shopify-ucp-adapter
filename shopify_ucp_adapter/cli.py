@@ -195,24 +195,33 @@ def validate(
 def export_mcp(
     output: str = typer.Option("mcp.json", help="Output MCP config file path"),
     base_url: str = typer.Option("http://localhost:8000", help="Base URL of your UCP server"),
+    sandbox: bool = typer.Option(False, help="Use localhost sandbox URL"),
 ):
     """Generate an MCP config file for Claude Desktop or Cursor."""
-    mcp_config = {
-        "name": "shopify-ucp",
-        "version": "1.0",
-        "servers": [
-            {
-                "name": "shopify-ucp",
-                "type": "http",
-                "base_url": base_url,
-                "routes": [
-                    {"method": "GET", "path": "/ucp/products/{product_id}"},
-                    {"method": "GET", "path": "/ucp/products/by-handle/{handle}"},
-                    {"method": "POST", "path": "/ucp/sessions"},
-                ],
-            }
-        ],
-    }
+    if sandbox:
+        base_url = "http://localhost:8000"
+
+    cfg = load_config("config.json") if Path("config.json").exists() else None
+    adapter = ShopifyUCPAdapter(cfg) if cfg else None
+    if adapter:
+        mcp_config = adapter.to_mcp_tool_definition(base_url)
+    else:
+        mcp_config = {
+            "name": "shopify-ucp",
+            "version": "1.0",
+            "servers": [
+                {
+                    "name": "shopify-ucp",
+                    "type": "http",
+                    "base_url": base_url,
+                    "routes": [
+                        {"method": "GET", "path": "/ucp/products/{product_id}"},
+                        {"method": "GET", "path": "/ucp/products/by-handle/{handle}"},
+                        {"method": "POST", "path": "/ucp/sessions"},
+                    ],
+                }
+            ],
+        }
 
     output_path = Path(output)
     with open(output_path, "w") as f:

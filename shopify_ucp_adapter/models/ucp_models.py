@@ -73,6 +73,7 @@ class UCPProduct(BaseModel):
     image: List[UCPImage] = Field(default_factory=list)
     brand: Optional[UCPOrganization] = None
     category: Optional[str] = None
+    keywords: Optional[List[str]] = None
     offers: List[UCPOffer] = Field(default_factory=list)
     url: Optional[HttpUrl] = None
     

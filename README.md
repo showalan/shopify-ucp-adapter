@@ -356,6 +356,7 @@ curl -X POST http://localhost:8000/ucp/sessions \
 - HTML descriptions are converted to plain text before mapping to UCP `description`.
 - `gtin` is mapped from `barcode`.
 - `mpn` is mapped from `sku`.
+- `keywords` are generated from Shopify `tags` and `product_type` for AI-friendly discovery.
 
 ## 🧪 Sandbox Mode
 
@@ -367,12 +368,48 @@ from shopify_ucp_adapter import ShopifyUCPAdapter, MockShopifyClient, AdapterCon
 adapter = ShopifyUCPAdapter(AdapterConfig(...), client=MockShopifyClient())
 ```
 
+## 🔌 Circuit Breaker
+
+The adapter includes a simple circuit breaker. When Shopify API calls fail repeatedly, the
+breaker opens and the session endpoint returns:
+
+```
+{"status": "UCP_STATUS_MAINTENANCE"}
+```
+
+This protects downstream AI systems during Shopify outages or throttling.
+
+## 💾 Persistent Idempotency Storage
+
+Use `SQLiteStorage` to persist session idempotency across restarts:
+
+```python
+from shopify_ucp_adapter.storage import SQLiteStorage
+
+storage = SQLiteStorage("sessions.db")
+app.include_router(get_ucp_router(adapter, storage=storage))
+```
+
 ## 🧩 MCP Export
 
 Generate a ready-to-import MCP config file:
 
 ```bash
 python -m shopify_ucp_adapter.cli export-mcp --base-url http://localhost:8000 --output mcp.json
+```
+
+Use sandbox mode to generate a localhost config instantly:
+
+```bash
+python -m shopify_ucp_adapter.cli export-mcp --sandbox --output mcp.json
+```
+
+## 🧠 MCP Tool Definitions (Dynamic)
+
+Generate MCP tool definitions directly from the adapter:
+
+```python
+tools = adapter.to_mcp_tool_definition("http://localhost:8000")
 ```
 
 ## 📈 Observability
