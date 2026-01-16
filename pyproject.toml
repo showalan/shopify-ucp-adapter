@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shopify-ucp-adapter"
+version = "0.1.0"
+description = "Protocol adapter for converting Shopify API responses to UCP (Schema.org) format"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+keywords = ["shopify", "ucp", "schema.org", "e-commerce", "adapter", "protocol"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "pydantic>=2.0.0",
+    "httpx>=0.24.0",
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.23.0",
+    "typer[all]>=0.9.0",
+    "rich>=13.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.0.270",
+    "mypy>=1.0.0",
+]
+
+[project.scripts]
+shopify-ucp = "shopify_ucp_adapter.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/yourusername/shopify-ucp-adapter"
+Documentation = "https://github.com/yourusername/shopify-ucp-adapter#readme"
+Repository = "https://github.com/yourusername/shopify-ucp-adapter"
+Issues = "https://github.com/yourusername/shopify-ucp-adapter/issues"
+
+[tool.setuptools]
+packages = ["shopify_ucp_adapter", "shopify_ucp_adapter.models"]
+
+[tool.black]
+line-length = 100
+target-version = ['py39']
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
