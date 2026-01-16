@@ -191,6 +191,36 @@ def validate(
         raise typer.Exit(1)
 
 
+@app.command("export-mcp")
+def export_mcp(
+    output: str = typer.Option("mcp.json", help="Output MCP config file path"),
+    base_url: str = typer.Option("http://localhost:8000", help="Base URL of your UCP server"),
+):
+    """Generate an MCP config file for Claude Desktop or Cursor."""
+    mcp_config = {
+        "name": "shopify-ucp",
+        "version": "1.0",
+        "servers": [
+            {
+                "name": "shopify-ucp",
+                "type": "http",
+                "base_url": base_url,
+                "routes": [
+                    {"method": "GET", "path": "/ucp/products/{product_id}"},
+                    {"method": "GET", "path": "/ucp/products/by-handle/{handle}"},
+                    {"method": "POST", "path": "/ucp/sessions"},
+                ],
+            }
+        ],
+    }
+
+    output_path = Path(output)
+    with open(output_path, "w") as f:
+        json.dump(mcp_config, f, indent=2)
+
+    console.print(f"[green]✓[/green] MCP config created: {output}")
+
+
 @app.command("from-url")
 def from_url(
     product_url: str = typer.Argument(..., help="Shopify product URL"),

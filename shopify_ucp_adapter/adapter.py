@@ -2,6 +2,8 @@
 
 from typing import List, Optional, Dict, Any, Callable, Union
 from decimal import Decimal
+from html import unescape
+import re
 import httpx
 
 from .models.shopify_models import ShopifyProduct, ShopifyVariant
@@ -33,6 +35,7 @@ class ShopifyUCPAdapter:
         config: AdapterConfig,
         currency_provider: Optional[Callable[[ShopifyVariant], str]] = None,
         exchange_rate_provider: Optional[Callable[[str, str], Decimal]] = None,
+        client: Optional[Any] = None,
     ):
         """
         Initialize the adapter.
@@ -41,6 +44,7 @@ class ShopifyUCPAdapter:
             config: Adapter configuration
             currency_provider: Optional function to override currency per variant
             exchange_rate_provider: Optional function to get FX rates (from_currency, to_currency)
+            client: Optional HTTP client (e.g., MockShopifyClient)
         """
         self.config = config
         self.currency_provider = currency_provider
@@ -63,14 +67,19 @@ class ShopifyUCPAdapter:
         )
         
         # HTTP client
-        self.client = httpx.AsyncClient(
-            base_url=f"https://{config.shopify.shop_domain}",
-            headers={
-                "X-Shopify-Access-Token": config.shopify.access_token,
-                "Content-Type": "application/json",
-            },
-            timeout=30.0
-        )
+        if client is not None:
+            self.client = client
+            self._owns_client = False
+        else:
+            self.client = httpx.AsyncClient(
+                base_url=f"https://{config.shopify.shop_domain}",
+                headers={
+                    "X-Shopify-Access-Token": config.shopify.access_token,
+                    "Content-Type": "application/json",
+                },
+                timeout=30.0
+            )
+            self._owns_client = True
         
         # Organization for offers
         self.organization = UCPOrganization(
@@ -80,7 +89,8 @@ class ShopifyUCPAdapter:
     
     async def close(self):
         """Close HTTP client."""
-        await self.client.aclose()
+        if self._owns_client:
+            await self.client.aclose()
     
     async def __aenter__(self):
         return self
@@ -208,6 +218,14 @@ class ShopifyUCPAdapter:
         total = price_decimal + tax_amount
         return str(total.quantize(Decimal("0.01")))
 
+    def _html_to_text(self, value: Optional[str]) -> Optional[str]:
+        """Convert HTML content to plain text."""
+        if not value:
+            return value
+        text = re.sub(r"<[^>]+>", " ", value)
+        text = re.sub(r"\s+", " ", text)
+        return unescape(text).strip()
+
     def _resolve_currency_and_price(self, variant: ShopifyVariant) -> tuple[str, str]:
         """
         Resolve currency and converted price for a variant.
@@ -289,6 +307,7 @@ class ShopifyUCPAdapter:
             seller=self.organization,
             sku=variant.sku,
             gtin=variant.barcode,
+            mpn=variant.sku,
             name=variant_name
         )
     
@@ -333,10 +352,16 @@ class ShopifyUCPAdapter:
             )
         
         # Create UCP product
+        description = (
+            self._html_to_text(shopify_product.body_html)
+            or self._html_to_text(shopify_product.description_html)
+            or shopify_product.description
+        )
+
         return UCPProduct(
             product_id=shopify_product.id,
             name=shopify_product.title,
-            description=shopify_product.description,
+            description=description,
             image=ucp_images,
             brand=brand,
             category=shopify_product.product_type,
@@ -372,6 +397,12 @@ class ShopifyUCPAdapter:
         if product.vendor:
             brand = UCPOrganization(name=product.vendor)
 
+        description = (
+            self._html_to_text(product.body_html)
+            or self._html_to_text(product.description_html)
+            or product.description
+        )
+
         results: List[UCPProduct] = []
         for variant in product.variants:
             offer = self._convert_variant_to_offer(variant, product.online_store_url)
@@ -381,7 +412,7 @@ class ShopifyUCPAdapter:
                 UCPProduct(
                     product_id=ucp_id,
                     name=f"{product.title}{variant_suffix}",
-                    description=product.description,
+                    description=description,
                     image=ucp_images,
                     brand=brand,
                     category=product.product_type,

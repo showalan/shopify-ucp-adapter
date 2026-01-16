@@ -341,6 +341,40 @@ curl -X POST http://localhost:8000/ucp/sessions \
 
 If the country matches `tax.region_rates`, that rate is applied; otherwise the default rate is used.
 
+### 8. Idempotency (Transactions)
+
+Provide a `cart_token` to ensure repeated requests within 5 minutes return the same `session_id`:
+
+```bash
+curl -X POST http://localhost:8000/ucp/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"product_id":"123","variant_id":"456","quantity":1,"cart_token":"cart_123"}'
+```
+
+## 🧠 Schema Mapping Enhancements
+
+- HTML descriptions are converted to plain text before mapping to UCP `description`.
+- `gtin` is mapped from `barcode`.
+- `mpn` is mapped from `sku`.
+
+## 🧪 Sandbox Mode
+
+Use the built-in mock client to test without real Shopify credentials:
+
+```python
+from shopify_ucp_adapter import ShopifyUCPAdapter, MockShopifyClient, AdapterConfig
+
+adapter = ShopifyUCPAdapter(AdapterConfig(...), client=MockShopifyClient())
+```
+
+## 🧩 MCP Export
+
+Generate a ready-to-import MCP config file:
+
+```bash
+python -m shopify_ucp_adapter.cli export-mcp --base-url http://localhost:8000 --output mcp.json
+```
+
 ## 📈 Observability
 
 OpenTelemetry metrics record request duration for discovery endpoints. Metrics are exported via

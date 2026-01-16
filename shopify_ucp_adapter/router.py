@@ -3,6 +3,8 @@
 from typing import Optional
 from decimal import Decimal
 from time import perf_counter
+from uuid import uuid4
+from time import time
 import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -35,6 +37,10 @@ def get_ucp_router(adapter: ShopifyUCPAdapter) -> APIRouter:
         variant_id: Optional[str] = None
         quantity: int = Field(1, ge=1)
         shipping_address: Optional[ShippingAddress] = None
+        cart_token: Optional[str] = None
+        idempotency_key: Optional[str] = None
+
+    session_store: dict[str, dict] = {}
 
     @router.get("/products/{product_id}")
     async def get_product(product_id: str, flatten_variants: Optional[bool] = False):
@@ -60,6 +66,13 @@ def get_ucp_router(adapter: ShopifyUCPAdapter) -> APIRouter:
     async def create_session(request: SessionRequest):
         """Create a UCP session with optional shipping address for tax estimation."""
         start = perf_counter()
+        now = time()
+
+        idempotency_key = request.cart_token or request.idempotency_key
+        if idempotency_key:
+            existing = session_store.get(idempotency_key)
+            if existing and now - existing["ts"] <= 300:
+                return existing["response"]
         product = await adapter.fetch_product(request.product_id)
         if not product.variants:
             raise HTTPException(status_code=400, detail="Product has no variants")
@@ -99,7 +112,9 @@ def get_ucp_router(adapter: ShopifyUCPAdapter) -> APIRouter:
             duration_histogram.record(duration_ms, attributes={"product_id": request.product_id})
         logger.info("session_created", extra={"product_id": request.product_id, "duration_ms": duration_ms})
 
-        return {
+        session_id = f"sess_{uuid4().hex}"
+        response = {
+            "session_id": session_id,
             "product_id": request.product_id,
             "variant_id": variant.id,
             "currency": offer.price_specification.price_currency,
@@ -108,5 +123,10 @@ def get_ucp_router(adapter: ShopifyUCPAdapter) -> APIRouter:
             "total": str(total),
             "country": country,
         }
+
+        if idempotency_key:
+            session_store[idempotency_key] = {"ts": now, "response": response}
+
+        return response
 
     return router

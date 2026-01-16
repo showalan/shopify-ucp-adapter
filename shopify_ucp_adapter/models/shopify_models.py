@@ -53,6 +53,7 @@ class ShopifyProduct(BaseModel):
     id: str
     title: str
     description: Optional[str] = None
+    body_html: Optional[str] = Field(None, alias="body_html")
     description_html: Optional[str] = Field(None, alias="descriptionHtml")
     vendor: Optional[str] = None
     product_type: Optional[str] = Field(None, alias="productType")
